@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "market-rank"
+version = "0.1.0"
+description = "US equity rankings using sector-relative fundamentals"
+requires-python = ">=3.10"
+dependencies = [
+  "yfinance>=0.2.54",
+  "pandas>=2.2",
+  "numpy>=1.26",
+  "requests>=2.31",
+  "pandas-market-calendars>=4.4",
+]
+
+[project.scripts]
+market-rank = "market_rank.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["market_rank*"]

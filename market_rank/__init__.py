@@ -1,0 +1,1 @@
+"""US equity ranking CLI."""

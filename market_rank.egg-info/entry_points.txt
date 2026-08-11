@@ -1,0 +1,2 @@
+[console_scripts]
+market-rank = market_rank.cli:main
