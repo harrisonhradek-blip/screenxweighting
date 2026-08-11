@@ -11,6 +11,7 @@ from .metrics import METRICS, display_metrics, normalize_record, score_records
 from .market_cap import largest_us_equities
 from .storage import load, now_iso, save
 from .universe import download_us_symbols
+from .weights import load_sector_weights
 
 
 def _fresh(entry: dict[str, Any]) -> bool:
@@ -58,11 +59,12 @@ def update(args: argparse.Namespace) -> None:
         if index % 25 == 0:
             save(FUNDAMENTALS_FILE, cache)
             print(f"Processed {index}/{len(symbols)} symbols")
-    ranked = score_records(records)
-    snapshot = {"generated_at": now_iso(), "universe_size": len(symbols), "ranked_count": len(ranked), "universe": f"largest {args.market_cap:,} US equities" if args.market_cap else "all US listed equities", "records": ranked[:100]}
+    ranked = score_records(records, load_sector_weights(args.weights_file))
+    eligible = [record for record in ranked if record.get("coverage", 0) >= args.min_coverage]
+    snapshot = {"generated_at": now_iso(), "universe_size": len(symbols), "ranked_count": len(ranked), "eligible_count": len(eligible), "min_coverage": args.min_coverage, "universe": f"largest {args.market_cap:,} US equities" if args.market_cap else "all US listed equities", "records": eligible[:100]}
     save(FUNDAMENTALS_FILE, cache)
     save(SNAPSHOT_FILE, snapshot)
-    print(f"Saved {len(snapshot['records'])} ranked companies to {SNAPSHOT_FILE}")
+    print(f"Saved {len(snapshot['records'])} eligible companies (coverage >= {args.min_coverage}) to {SNAPSHOT_FILE}")
 
 
 def _fmt(value: Any, percent: bool = False) -> str:
@@ -75,7 +77,8 @@ def top(args: argparse.Namespace) -> None:
     records = snapshot.get("records", [])
     if not records:
         raise SystemExit("No snapshot yet. Run: python -m market_rank update")
-    print(f"Snapshot: {snapshot.get('generated_at')} | {snapshot.get('universe', 'US equities')} | ranked {snapshot.get('ranked_count')} of {snapshot.get('universe_size')} symbols")
+    records = [row for row in records if row.get("coverage", 0) >= args.min_coverage]
+    print(f"Snapshot: {snapshot.get('generated_at')} | {snapshot.get('universe', 'US equities')} | ranked {snapshot.get('ranked_count')} of {snapshot.get('universe_size')} symbols | coverage >= {args.min_coverage}")
     print(f"{'#':>3}  {'Ticker':<7} {'Company':<28} {'Sector':<20} {'Score':>7} {'Coverage':>8}")
     for rank, row in enumerate(records[:args.limit], start=1):
         print(f"{rank:>3}  {row['symbol']:<7} {row['name'][:28]:<28} {row['sector'][:20]:<20} {_fmt(row.get('composite_score')):>7} {row.get('coverage', 0):>8}")
@@ -92,6 +95,9 @@ def show(args: argparse.Namespace) -> None:
     for label, raw, score in display_metrics(row):
         pct = label in {"Revenue growth", "EPS growth", "Forward ROE"}
         print(f"{label:<29} {_fmt(raw, pct):>11}       {_fmt(score):>8}")
+    print("\nCategory scores (sector-weighted composite)")
+    for category in ("future", "financial_health", "valuation"):
+        print(f"{category.replace('_', ' ').title():<29} {_fmt(row.get(f'category_{category}')):>11}")
     print("DCF scenarios (per share): bear {}, base {}, bull {}; base/current = {}".format(_fmt(row.get("dcf_bear")), _fmt(row.get("dcf_base")), _fmt(row.get("dcf_bull")), _fmt(row.get("dcf_upside"))))
     print(f"Analyst target/current: {_fmt(row.get('analyst_upside'))}")
     print("Scores > 1 are better than the sector median. For valuation/debt metrics, lower raw values score higher.")
@@ -121,8 +127,10 @@ def main() -> None:
     common.add_argument("--max-symbols", type=int, help="Limit universe size (testing only).")
     common.add_argument("--market-cap", type=int, choices=(100, 1000), help="Rank only the largest 100 or 1,000 US common equities by live market cap.")
     common.add_argument("--refresh-universe", action="store_true", help="Redownload listed symbols.")
+    common.add_argument("--min-coverage", type=int, default=0, choices=range(0, 13), metavar="0-12", help="Require this many valid scored metrics before saving/displaying (recommended: 7).")
+    common.add_argument("--weights-file", help="Optional JSON file with default and sector category weights.")
     update_parser = sub.add_parser("update", parents=[common]); update_parser.set_defaults(func=update)
-    top_parser = sub.add_parser("top"); top_parser.add_argument("--limit", type=int, default=100); top_parser.set_defaults(func=top)
+    top_parser = sub.add_parser("top"); top_parser.add_argument("--limit", type=int, default=100); top_parser.add_argument("--min-coverage", type=int, default=0, choices=range(0, 13), metavar="0-12"); top_parser.set_defaults(func=top)
     show_parser = sub.add_parser("show"); show_parser.add_argument("symbol"); show_parser.set_defaults(func=show)
     run_parser = sub.add_parser("run", parents=[common]); run_parser.add_argument("--at", default=DEFAULT_OPEN_REFRESH_TIME, help="HH:MM ET, default 09:40"); run_parser.set_defaults(func=run)
     args = parser.parse_args()

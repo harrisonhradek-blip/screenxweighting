@@ -1,7 +1,6 @@
 """Metric extraction, sector-relative scoring, and a lightweight DCF model."""
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 import math
 import numpy as np
@@ -19,6 +18,14 @@ METRICS: dict[str, tuple[str, bool, str]] = {
     "earnings_growth": ("earningsGrowth", True, "EPS growth"),
     "return_on_equity": ("returnOnEquity", True, "Forward ROE"),
     "forward_ev_ebitda": ("forwardEVToEBITDA", False, "Forward EV/EBITDA"),
+}
+
+# Categories receive their sector weight once, irrespective of how many raw
+# fields Yahoo happens to report for that company.
+CATEGORY_METRICS = {
+    "future": ("revenue_growth", "earnings_growth", "return_on_equity"),
+    "financial_health": ("debt_to_equity", "asset_turnover", "free_cash_flow"),
+    "valuation": ("pe", "forward_pe", "historic_pe", "forward_ev_ebitda", "dcf_upside", "analyst_upside"),
 }
 
 
@@ -85,7 +92,7 @@ def normalize_record(info: dict[str, Any], history: pd.DataFrame) -> dict[str, A
     return row
 
 
-def score_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def score_records(records: list[dict[str, Any]], sector_weights: dict[str, dict[str, float]] | None = None) -> list[dict[str, Any]]:
     frame = pd.DataFrame(records)
     if frame.empty:
         return records
@@ -100,8 +107,19 @@ def score_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
         frame[f"score_{metric}"] = pd.to_numeric(frame[metric], errors="coerce").where(lambda s: s > 0)
     score_cols = [c for c in frame if c.startswith("score_")]
     clipped = frame[score_cols].clip(lower=0.25, upper=4.0)
-    frame["composite_score"] = clipped.mean(axis=1, skipna=True)
     frame["coverage"] = clipped.notna().sum(axis=1)
+    sector_weights = sector_weights or {"default": {"future": 1 / 3, "financial_health": 1 / 3, "valuation": 1 / 3}}
+    for category, metrics in CATEGORY_METRICS.items():
+        frame[f"category_{category}"] = clipped[[f"score_{metric}" for metric in metrics]].mean(axis=1, skipna=True)
+
+    def weighted_composite(row: pd.Series) -> float | None:
+        weights = sector_weights.get(row["sector"], sector_weights["default"])
+        available = [(row[f"category_{category}"], weights[category]) for category in CATEGORY_METRICS if pd.notna(row[f"category_{category}"])]
+        if not available:
+            return None
+        return sum(score * weight for score, weight in available) / sum(weight for _, weight in available)
+
+    frame["composite_score"] = frame.apply(weighted_composite, axis=1)
     return frame.sort_values(["composite_score", "coverage"], ascending=False).to_dict("records")
 
 

@@ -1,0 +1,12 @@
+{
+  "default": {
+    "future": 0.3333,
+    "financial_health": 0.3333,
+    "valuation": 0.3334
+  },
+  "Technology": {
+    "future": 0.40,
+    "financial_health": 0.30,
+    "valuation": 0.30
+  }
+}

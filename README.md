@@ -22,6 +22,10 @@ market-rank update
 market-rank update --market-cap 100
 market-rank update --market-cap 1000
 
+# Exclude incomplete companies before saving the ranked top 100.
+market-rank update --market-cap 1000 --min-coverage 7
+market-rank top --min-coverage 7
+
 # Print the current top 100 (or a shorter list).
 market-rank top --limit 25
 
@@ -44,6 +48,16 @@ For every metric, the raw comparison is against the **median valid value in the 
 - PE, forward PE, EV/EBITDA, debt-to-equity and historic PE use `sector median / company` because lower is better.
 
 Negative or zero values are shown as unavailable for ratio-based comparisons where they would be misleading. The composite rank is a winsorized average of available relative scores, plus DCF and analyst-upside contributions; it is a screening signal, not investment advice.
+
+## Sector category weights
+
+The composite first averages valid scores inside Future, Financial health, and Valuation categories, then weights those three category scores. This prevents a company with more reported valuation fields from being over-represented. The default is equal category weighting. Supply a reviewed profile when your group has agreed one:
+
+```bash
+market-rank update --market-cap 1000 --min-coverage 7 --weights-file sector-weights.example.json
+```
+
+The included example has the Technology split: Future 40%, Financial health 30%, Valuation 30%.
 
 ## Data notes
 
