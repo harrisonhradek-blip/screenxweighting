@@ -49,6 +49,26 @@ For every metric, the raw comparison is against the **median valid value in the 
 
 Negative or zero values are shown as unavailable for ratio-based comparisons where they would be misleading. The composite rank is a winsorized average of available relative scores, plus DCF and analyst-upside contributions; it is a screening signal, not investment advice.
 
+## Working on the code
+
+The project is intentionally split into small modules:
+
+- `market_rank/cli.py` — commands, cache use, snapshot creation, and terminal output.
+- `market_rank/metrics.py` — Yahoo field extraction, sector-relative scores, DCF, and composite calculation.
+- `market_rank/weights.py` — validation and loading of sector category weights.
+- `market_rank/universe.py` — all-US listed symbol download.
+- `market_rank/market_cap.py` — top 100/1,000 market-cap universe download.
+- `market_rank/storage.py` — local JSON reading and writing.
+
+To add a metric, add its Yahoo field and direction to `METRICS` in `metrics.py`, then add its internal key to one of the `CATEGORY_METRICS` groups. Run a small focused update to check it:
+
+```bash
+market-rank update --symbols MSFT,AAPL,NVDA,AMZN,GOOGL --min-coverage 0
+market-rank show MSFT
+```
+
+The snapshot is generated data. Do not manually edit it; regenerate it with `market-rank update` after code changes.
+
 ## Sector category weights
 
 The composite first averages valid scores inside Future, Financial health, and Valuation categories, then weights those three category scores. This prevents a company with more reported valuation fields from being over-represented. The default is equal category weighting. Supply a reviewed profile when your group has agreed one:
